@@ -5,6 +5,7 @@ Learning' (Mnih et al., 2016).
 """
 
 import argparse
+import multiprocessing
 
 
 PARSER = argparse.ArgumentParser(description='Train an agent to play Atari games.')
