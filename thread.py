@@ -15,6 +15,11 @@ PARSER.add_argument('--env_name',
                     help='name of an OpenAI Gym Atari environment on which to train',
                     default='Pong-v0')
 
+PARSER.add_argument('--render',
+                    help='determines whether to display the game screen of each agent',
+                    type=bool,
+                    default=False)
+
 PARSER.add_argument('--action_space',
                     nargs='+',
                     help='restricts the number of possible actions',
