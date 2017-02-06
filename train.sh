@@ -16,7 +16,7 @@ tmux kill-session -t $TMUX_SESSION_NAME 2> /dev/null
 tmux new-session -s $TMUX_SESSION_NAME -n master -d
 
 # Create a window for each learning thread.
-for thread_id in $(seq 1 $NUM_THREADS); do
+for thread_id in $(seq 0 $(($NUM_THREADS - 1))); do
     tmux new-window -t $TMUX_SESSION_NAME -n thread-$thread_id
 done
 
@@ -33,15 +33,17 @@ sleep 1
 tmux send-keys -t a3c:master "/usr/bin/python3 thread.py" \
                              " --env_name=$ENV_NAME" \
                              " --log_dir=$LOG_DIR" \
-                             " --num_threads=$NUM_THREADS $@" Enter
+                             " --num_threads=$NUM_THREADS" \
+                             " $@" Enter
 
 # Start worker threads.
-for thread_id in $(seq 1 $NUM_THREADS); do
+for thread_id in $(seq 0 $(($NUM_THREADS - 1))); do
     tmux send-keys -t a3c:thread-$thread_id "/usr/bin/python3 thread.py" \
                                             " --env_name=$ENV_NAME" \
                                             " --log_dir=$LOG_DIR" \
                                             " --num_threads=$NUM_THREADS" \
-                                            " --worker_id=$thread_id $@" Enter
+                                            " --worker_index=$thread_id" \
+                                            " $@" Enter
 done
 
 # Start TensorBoard.
