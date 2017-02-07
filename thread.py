@@ -4,14 +4,18 @@ Heavily influenced by DeepMind's seminal paper 'Asynchronous Methods for Deep Re
 Learning' (Mnih et al., 2016).
 """
 
+import agent
 import argparse
 import environment
+import logging
 import multiprocessing
+import os
 import signal
 import sys
 import tensorflow as tf
 import time
 
+LOGGER = logging.getLogger(__name__)
 PARSER = argparse.ArgumentParser(description='Train an agent to play Atari games.')
 
 PARSER.add_argument('--env_name',
@@ -40,7 +44,7 @@ PARSER.add_argument('--load_path',
 
 PARSER.add_argument('--log_dir',
                     metavar='PATH',
-                    help='directory in which summaries will be saved',
+                    help='path to a directory where to save the model and log events',
                     default='models/tmp')
 
 PARSER.add_argument('--num_threads',
@@ -49,11 +53,17 @@ PARSER.add_argument('--num_threads',
                     type=int,
                     default=multiprocessing.cpu_count())
 
-PARSER.add_argument('--train_time',
+PARSER.add_argument('--num_local_steps',
                     metavar='TIME STEPS',
-                    help='number of time steps that each thread will train for',
+                    help='number of experiences per worker that go into a gradient descent update',
                     type=int,
-                    default=20000000)
+                    default=20)
+
+PARSER.add_argument('--num_global_steps',
+                    metavar='TIME STEPS',
+                    help='number of time steps trained for in total',
+                    type=int,
+                    default=50000000)
 
 PARSER.add_argument('--learning_rate',
                     metavar='LAMBDA',
@@ -81,7 +91,7 @@ PARSER.add_argument('--observations_per_state',
 
 
 def get_cluster_def(num_threads):
-    """Creates a cluster definition with 1 master (parameter server) and num_threads workers."""
+    """Creates a cluster definition for 1 master (parameter server) and num_threads workers."""
 
     port = 14000
     localhost = '127.0.0.1'
@@ -102,8 +112,51 @@ def run_worker(args):
     config = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=2)
     server = tf.train.Server(cluster_def, 'worker', args.worker_index, config=config)
 
-    # Initialize the environment.
+    # Initialize the model.
     env = environment.AtariWrapper(args.env_name, args.observations_per_state, args.action_space)
+    player = agent.Agent(args.worker_index,
+                         env,
+                         args.render,
+                         args.num_local_steps,
+                         args.learning_rate,
+                         args.max_gradient,
+                         args.discount)
+
+    # Local copies of the model will not be saved.
+    model_variables = [var for var in tf.global_variables() if not var.name.startswith('local')]
+
+    # Configure the supervisor.
+    is_chief = args.worker_index == 0
+    checkpoint_dir = os.path.join(args.log_dir, 'checkpoint')
+    thread_dir = os.path.join(args.log_dir, 'thread-', args.worker_index)
+    summary_writer = tf.summary.FileWriter(thread_dir)
+    init_fn = lambda sess: sess.run(tf.global_variables_initializer())
+
+    supervisor = tf.train.Supervisor(ready_op=tf.report_uninitialized_variables(model_variables),
+                                     is_chief=is_chief,
+                                     init_op=tf.variables_initializer(model_variables),
+                                     logdir=checkpoint_dir,
+                                     summary_op=None,
+                                     saver=tf.train.Saver(model_variables),
+                                     global_step=player.global_step,
+                                     save_summaries_secs=30,
+                                     save_model_secs=30,
+                                     summary_writer=summary_writer,
+                                     init_fn=init_fn)
+
+    config = tf.ConfigProto(device_filters=['/job:master',
+                                            '/job:worker/task:{}/cpu:0'.format(args.worker_index)])
+
+    with supervisor.managed_session(server.target, config=config) as sess, sess.as_default():
+        player.start(sess, summary_writer)
+        global_step = sess.run(player.global_step)
+
+        while not supervisor.should_stop() and global_step < args.num_global_steps:
+            player.train(sess)
+            global_step = sess.run(player.global_step)
+
+    supervisor.stop()
+    LOGGER.info('Stopped after %d global steps.', player.global_step)
 
 
 def main(args):
@@ -119,6 +172,7 @@ def main(args):
         cluster_def = get_cluster_def(args.num_threads)
         config = tf.ConfigProto(device_filters=['/job:master'])
         server = tf.train.Server(cluster_def, 'master', config=config)
+        LOGGER.info('Started master thread.')
 
         # Keep master thread running since worker threads depend on it.
         while True:
