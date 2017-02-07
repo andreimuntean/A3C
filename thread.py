@@ -55,7 +55,7 @@ PARSER.add_argument('--num_threads',
 
 PARSER.add_argument('--num_local_steps',
                     metavar='TIME STEPS',
-                    help='number of experiences per worker that go into a gradient descent update',
+                    help='number of experiences used per worker when updating the model',
                     type=int,
                     default=20)
 
@@ -70,6 +70,12 @@ PARSER.add_argument('--learning_rate',
                     help='rate at which the network learns from new examples',
                     type=float,
                     default=1e-4)
+
+PARSER.add_argument('--entropy_regularization',
+                    metavar='BETA',
+                    help='the strength of the entropy regularization term',
+                    type=float,
+                    default=0.01)
 
 PARSER.add_argument('--max_gradient',
                     metavar='DELTA',
@@ -119,6 +125,7 @@ def run_worker(args):
                          args.render,
                          args.num_local_steps,
                          args.learning_rate,
+                         args.entropy_regularization,
                          args.max_gradient,
                          args.discount)
 
