@@ -17,7 +17,7 @@ class Agent():
                  num_local_steps,
                  learning_rate,
                  entropy_regularization,
-                 max_gradient,
+                 max_gradient_norm,
                  discount):
         """An agent that learns to play Atari games using an A3C architecture.
 
@@ -29,8 +29,8 @@ class Agent():
             num_local_steps: Number of experiences used per worker when updating the model.
             learning_rate: The speed with which the network learns from new examples.
             entropy_regularization: The strength of the entropy regularization term.
-            max_gradient: Maximum value allowed for gradients during backpropagation. Gradients that
-                would otherwise surpass this value are reduced to it.
+            max_gradient_norm: Maximum value allowed for the L2-norms of gradients. Gradients with
+                norms that would otherwise surpass this value are scaled down.
             discount: Discount factor for future rewards.
         """
 
@@ -45,19 +45,19 @@ class Agent():
 
         with tf.device(tf.train.replica_device_setter(1, '/job:master', worker_device)):
             with tf.variable_scope('global'):
-                self.global_network = a3c.PolicyNetwork(env.state_space, len(env.action_space))
+                self.global_network = a3c.PolicyNetwork(len(env.action_space), env.state_space)
                 self.global_step = tf.get_variable('global_step',
                                                    dtype=tf.int32,
                                                    initializer=tf.constant_initializer(0, tf.int32),
                                                    trainable=False)
         with tf.device(worker_device):
             with tf.variable_scope('local'):
-                self.local_network = a3c.PolicyNetwork(env.state_space, env.action_space
+                self.local_network = a3c.PolicyNetwork(len(env.action_space), env.state_space)
                 self.local_network.global_step = self.global_step
 
         self.action = tf.placeholder(tf.int32, [None, len(env.action_space)], 'Action')
         self.advantages = tf.placeholder(tf.float32, [None], 'Advantages')
-        
+
         probabilities = tf.nn.softmax(self.local_network.logits)
         log_probabilities = tf.nn.log_softmax(self.local_network.logits)
         policy_gradient_loss = -tf.reduce_sum(
@@ -67,26 +67,27 @@ class Agent():
         value_loss = tf.nn.l2_loss(self.local_network.value - self.reward)
         entropy = -tf.reduce_sum(probabilities * log_probabilities)
 
-        self.loss = policy_gradient_loss + 0.5 * value_loss - self.entropy_regularization * entropy
+        self.loss = policy_gradient_loss + 0.5 * value_loss - entropy_regularization * entropy
 
         # Fetch and clip the gradients of the local network.
         gradients = tf.gradients(self.loss, self.local_network.parameters)
-        clipped_gradients, _ = tf.clip_by_global_norm(gradients, max_gradient)
+        clipped_gradients, _ = tf.clip_by_global_norm(gradients, max_gradient_norm)
 
         # Update the global network using the clipped gradients.
         grads_and_vars = list(zip(clipped_gradients, self.global_network.parameters))
         self.train_step = [tf.train.AdamOptimizer(learning_rate).apply_gradients(grads_and_vars),
-                           self.global_step.assign_add(num_local_steps)]
+                           self.global_step.assign_add(tf.shape(pi.x)[0])]
 
         # Synchronize the local network with the global network.
         self.reset_local_network = [local_p.assign(global_p) 
                                     for local_p, global_p in zip(self.local_network.parameters,
                                                                  self.global_network.parameters)]
-        
+
+        batch_size = tf.to_float(tf.shape(self.local_network.x)[0])
         tf.summary.image('model/state', self.local_network.x)
-        tf.summary.scalar('model/policy_gradient_loss', policy_gradient_loss / num_local_steps)
-        tf.summary.scalar('model/value_loss', value_loss / num_local_steps)
-        tf.summary.scalar('model/entropy', entropy / num_local_steps)
+        tf.summary.scalar('model/policy_gradient_loss', policy_gradient_loss / batch_size)
+        tf.summary.scalar('model/value_loss', value_loss / batch_size)
+        tf.summary.scalar('model/entropy', entropy / batch_size)
         tf.summary.scalar('model/global_norm', tf.global_norm(self.local_network.parameters))
         tf.summary.scalar('model/gradient_global_norm', tf.global_norm(gradients))
 

@@ -106,7 +106,6 @@ class AtariWrapper:
                            frame[..., 2] * 0.00045)
 
         # Resize grayscale frame to an 80x80 matrix of 32-bit floats.
-        observation = cv2.resize(
-            grayscale_frame, (80, 80), interpolation=cv2.INTER_NEAREST).astype(np.float32)
+        observation = cv2.resize(grayscale_frame, (80, 80)).astype(np.float32)
 
         return observation, reward

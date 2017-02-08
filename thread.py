@@ -77,11 +77,11 @@ PARSER.add_argument('--entropy_regularization',
                     type=float,
                     default=0.01)
 
-PARSER.add_argument('--max_gradient',
+PARSER.add_argument('--max_gradient_norm',
                     metavar='DELTA',
-                    help='maximum value allowed for gradients during backpropagation',
+                    help='maximum value allowed for the L2-norms of gradients',
                     type=float,
-                    default=10)
+                    default=40)
 
 PARSER.add_argument('--discount',
                     metavar='GAMMA',
@@ -126,7 +126,7 @@ def run_worker(args):
                          args.num_local_steps,
                          args.learning_rate,
                          args.entropy_regularization,
-                         args.max_gradient,
+                         args.max_gradient_norm,
                          args.discount)
 
     # Local copies of the model will not be saved.
