@@ -56,36 +56,44 @@ class Agent():
                 self.local_network.global_step = self.global_step
 
         self.action = tf.placeholder(tf.int32, [None, len(env.action_space)], 'Action')
-        self.advantages = tf.placeholder(tf.float32, [None], 'Advantages')
+        self.advantage = tf.placeholder(tf.float32, [None], 'Advantage')
+        self.discounted_reward = tf.placeholder(tf.float32, [None], 'Discounted_Reward')
 
-        probabilities = tf.nn.softmax(self.local_network.logits)
-        log_probabilities = tf.nn.log_softmax(self.local_network.logits)
-        policy_gradient_loss = -tf.reduce_sum(
-            self.advantages * tf.reduce_sum(log_probabilities * self.action, 1))
+        # Estimate the policy loss using the cross-entropy loss function.
+        action_logits = self.local_network.action_logits
+        policy_loss = tf.reduce_sum(
+            self.advantage * -tf.nn.sparse_softmax_cross_entropy_with_logits(logits=action_logits,
+                                                                             labels=self.action))
 
-        self.reward = tf.placeholder(tf.float32, [None], 'Reward')
-        value_loss = tf.nn.l2_loss(self.local_network.value - self.reward)
-        entropy = -tf.reduce_sum(probabilities * log_probabilities)
+        # Regularize the policy loss by summing it with its entropy. High entropy means the agent is
+        # uncertain (meaning, it assigns similar probabilities to multiple actions). Low entropy
+        # means the agent is sure of which action it should take next.
+        entropy = -tf.reduce_sum(tf.nn.softmax(action_logits) * tf.nn.log_softmax(action_logits))
+        policy_loss += entropy_regularization * entropy
 
-        self.loss = policy_gradient_loss + 0.5 * value_loss - entropy_regularization * entropy
+        # Estimate the value loss using the sum of squared errors.
+        value_loss = tf.nn.l2_loss(self.local_network.value - self.discounted_reward)
+
+        # Estimate the final loss.
+        self.loss = policy_loss + 0.5 * value_loss
 
         # Fetch and clip the gradients of the local network.
         gradients = tf.gradients(self.loss, self.local_network.parameters)
         clipped_gradients, _ = tf.clip_by_global_norm(gradients, max_gradient_norm)
 
         # Update the global network using the clipped gradients.
+        batch_size = tf.shape(self.local_network.x)[0]
         grads_and_vars = list(zip(clipped_gradients, self.global_network.parameters))
         self.train_step = [tf.train.AdamOptimizer(learning_rate).apply_gradients(grads_and_vars),
-                           self.global_step.assign_add(tf.shape(pi.x)[0])]
+                           self.global_step.assign_add(batch_size)]
 
         # Synchronize the local network with the global network.
-        self.reset_local_network = [local_p.assign(global_p) 
+        self.reset_local_network = [local_p.assign(global_p)
                                     for local_p, global_p in zip(self.local_network.parameters,
                                                                  self.global_network.parameters)]
 
-        batch_size = tf.to_float(tf.shape(self.local_network.x)[0])
         tf.summary.image('model/state', self.local_network.x)
-        tf.summary.scalar('model/policy_gradient_loss', policy_gradient_loss / batch_size)
+        tf.summary.scalar('model/policy_loss', policy_loss / batch_size)
         tf.summary.scalar('model/value_loss', value_loss / batch_size)
         tf.summary.scalar('model/entropy', entropy / batch_size)
         tf.summary.scalar('model/global_norm', tf.global_norm(self.local_network.parameters))

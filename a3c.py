@@ -38,10 +38,6 @@ def _fully_connected_layer(x, shape, activation_fn, shared_bias=False):
     return activation_fn(tf.matmul(x, W) + b)
 
 
-def _sample(logits):
-    return tf.squeeze(tf.multinomial(logits - tf.reduce_max(logits, [1], keep_dims=True), 1), [1])
-
-
 class PolicyNetwork():
     def __init__(self, num_actions, state_shape):
         """Defines a policy network implemented as a convolutional recurrent neural network.
@@ -54,7 +50,6 @@ class PolicyNetwork():
 
         width, height, depth = state_shape
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
-        batch_size = tf.shape(self.x)[:1]
 
         with tf.name_scope('Convolutional_Layer_1'):
             h_conv1 = _convolutional_layer(self.x, [3, 3, depth, 32], 2, tf.nn.elu)
@@ -86,17 +81,19 @@ class PolicyNetwork():
             # of h_flat is [batch_size, features]. We want the batch_size dimension to be treated as
             # the time dimension, so the input is redundantly expanded to [1, batch_size, features].
             # The LSTM layer will assume it has 1 batch with a time dimension of length batch_size.
+            batch_size = tf.shape(h_flat)[0]
             lstm_input = tf.expand_dims(h_flat, [0])
             lstm_output, self.new_lstm_state = tf.nn.dynamic_rnn(lstm,
                                                                  lstm_input,
                                                                  batch_size,
                                                                  lstm_state)
             # Delete the fake batch dimension.
-            lstm_output = tf.reshape(lstm_output, [-1, 256])
+            lstm_output = tf.squeeze(lstm_output, [0])
 
-        self.logits = _fully_connected_layer(lstm_output, [256, num_actions], tf.identity)
+        self.action_logits = _fully_connected_layer(lstm_output, [256, num_actions], tf.identity)
         self.value = _fully_connected_layer(lstm_output, [256, 1], tf.identity)
-        self.action = tf.one_hot(_sample(self.logits), num_actions)
+        self.action = tf.squeeze(tf.multinomial(
+            self.action_logits - tf.reduce_max(self.action_logits, 1, keep_dims=True), 1))
         self.parameters = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                             tf.get_variable_scope().name)
 
@@ -120,3 +117,19 @@ class PolicyNetwork():
         sess = tf.get_default_session()
         feed_dict = {self.x: state, self.lstm_state: lstm_state}
         return sess.run((self.action, self.value, self.new_lstm_state), feed_dict)
+
+    def estimate_value(self, state, lstm_state):
+        """Estimates the value of the specified state.
+
+        Args:
+            state: State of the environment.
+            lstm_state: The state of the long short-term memory unit of the network. Use the
+                get_initial_lstm_state method when unknown.
+
+        Returns:
+            The value of the specified state and the new state of the LSTM unit.
+        """
+
+        sess = tf.get_default_session()
+        feed_dict = {self.x: state, self.lstm_state: lstm_state}
+        return sess.run((self.value, self.new_lstm_state), feed_dict)
