@@ -89,12 +89,6 @@ PARSER.add_argument('--discount',
                     type=float,
                     default=0.99)
 
-PARSER.add_argument('--observations_per_state',
-                    metavar='FRAMES',
-                    help='number of consecutive frames within a state',
-                    type=int,
-                    default=3)
-
 
 def get_cluster_def(num_threads):
     """Creates a cluster definition for 1 master (parameter server) and num_threads workers."""
@@ -119,7 +113,7 @@ def run_worker(args):
     server = tf.train.Server(cluster_def, 'worker', args.worker_index, config=config)
 
     # Initialize the model.
-    env = environment.AtariWrapper(args.env_name, args.observations_per_state, args.action_space)
+    env = environment.AtariWrapper(args.env_name, args.action_space)
     player = agent.Agent(args.worker_index,
                          env,
                          args.render,

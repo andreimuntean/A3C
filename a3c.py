@@ -81,7 +81,7 @@ class PolicyNetwork():
             # of h_flat is [batch_size, features]. We want the batch_size dimension to be treated as
             # the time dimension, so the input is redundantly expanded to [1, batch_size, features].
             # The LSTM layer will assume it has 1 batch with a time dimension of length batch_size.
-            batch_size = tf.shape(h_flat)[0]
+            batch_size = h_flat.get_shape()[0]
             lstm_input = tf.expand_dims(h_flat, [0])
             lstm_output, self.new_lstm_state = tf.nn.dynamic_rnn(lstm,
                                                                  lstm_input,
@@ -103,7 +103,7 @@ class PolicyNetwork():
         return self.initial_lstm_state
 
     def sample_action(self, state, lstm_state):
-        """Samples an action from the learned mixed strategy for the specified state.
+        """Samples an action for the specified state from the learned mixed strategy.
 
         Args:
             state: State of the environment.

@@ -45,14 +45,15 @@ class Agent():
 
         with tf.device(tf.train.replica_device_setter(1, '/job:master', worker_device)):
             with tf.variable_scope('global'):
-                self.global_network = a3c.PolicyNetwork(len(env.action_space), env.state_space)
+                self.global_network = a3c.PolicyNetwork(len(env.action_space),
+                                                        env.observation_space)
                 self.global_step = tf.get_variable('global_step',
                                                    dtype=tf.int32,
                                                    initializer=tf.constant_initializer(0, tf.int32),
                                                    trainable=False)
         with tf.device(worker_device):
             with tf.variable_scope('local'):
-                self.local_network = a3c.PolicyNetwork(len(env.action_space), env.state_space)
+                self.local_network = a3c.PolicyNetwork(len(env.action_space), env.observation_space)
                 self.local_network.global_step = self.global_step
 
         self.action = tf.placeholder(tf.int32, [None, len(env.action_space)], 'Action')
@@ -67,7 +68,7 @@ class Agent():
 
         # Regularize the policy loss by summing it with its entropy. High entropy means the agent is
         # uncertain (meaning, it assigns similar probabilities to multiple actions). Low entropy
-        # means the agent is sure of which action it should take next.
+        # means the agent is sure of which action it should perform next.
         entropy = -tf.reduce_sum(tf.nn.softmax(action_logits) * tf.nn.log_softmax(action_logits))
         policy_loss += entropy_regularization * entropy
 
@@ -82,7 +83,7 @@ class Agent():
         clipped_gradients, _ = tf.clip_by_global_norm(gradients, max_gradient_norm)
 
         # Update the global network using the clipped gradients.
-        batch_size = tf.shape(self.local_network.x)[0]
+        batch_size = self.local_network.x.get_shape()[0]
         grads_and_vars = list(zip(clipped_gradients, self.global_network.parameters))
         self.train_step = [tf.train.AdamOptimizer(learning_rate).apply_gradients(grads_and_vars),
                            self.global_step.assign_add(batch_size)]
