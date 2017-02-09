@@ -38,6 +38,10 @@ def _fully_connected_layer(x, shape, activation_fn, shared_bias=False):
     return activation_fn(tf.matmul(x, W) + b)
 
 
+def _sample(logits):
+    return tf.squeeze(tf.multinomial(logits - tf.reduce_max(logits, [1], keep_dims=True), 1), [1])
+
+
 class PolicyNetwork():
     def __init__(self, num_actions, state_shape):
         """Defines a policy network implemented as a convolutional recurrent neural network.
@@ -90,7 +94,29 @@ class PolicyNetwork():
             # Delete the fake batch dimension.
             lstm_output = tf.reshape(lstm_output, [-1, 256])
 
-        self.logits = _fully_connected_layer(lstm_output_flat, [256, num_actions], tf.identity)
-        self.value = _fully_connected_layer(lstm_output_flat, [256, 1], tf.identity)
+        self.logits = _fully_connected_layer(lstm_output, [256, num_actions], tf.identity)
+        self.value = _fully_connected_layer(lstm_output, [256, 1], tf.identity)
+        self.action = tf.one_hot(_sample(self.logits), num_actions)
         self.parameters = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                             tf.get_variable_scope().name)
+
+    def get_initial_lstm_state(self):
+        """Returns a value that can be used as the initial state of the LSTM unit of the network."""
+
+        return self.initial_lstm_state
+
+    def sample_action(self, state, lstm_state):
+        """Samples an action from the learned mixed strategy for the specified state.
+
+        Args:
+            state: State of the environment.
+            lstm_state: The state of the long short-term memory unit of the network. Use the
+                get_initial_lstm_state method when unknown.
+
+        Returns:
+            An action, the value of the specified state and the new state of the LSTM unit.
+        """
+
+        sess = tf.get_default_session()
+        feed_dict = {self.x: state, self.lstm_state: lstm_state}
+        return sess.run((self.action, self.value, self.new_lstm_state), feed_dict)
