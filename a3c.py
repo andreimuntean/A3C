@@ -17,23 +17,19 @@ def _convolutional_layer(x, shape, stride, activation_fn):
     num_output_params = shape[0] * shape[1] * shape[3]
     maxval = math.sqrt(6 / (num_input_params + num_output_params))
     W = tf.Variable(tf.random_uniform(shape, -maxval, maxval), name='Weights')
-    b = tf.Variable(tf.constant(0.1, shape=[shape[3]]), name='Bias')
+    b = tf.Variable(tf.constant(0.0, shape=[shape[3]]), name='Bias')
     conv = tf.nn.conv2d(x, W, [1, stride, stride, 1], 'VALID')
 
     return activation_fn(tf.nn.bias_add(conv, b))
 
 
-def _fully_connected_layer(x, shape, activation_fn, shared_bias=False):
+def _fully_connected_layer(x, shape, activation_fn):
     if len(shape) != 2:
         raise ValueError('Shape "{}" is invalid. Must have length 2.'.format(shape))
 
     maxval = math.sqrt(6 / (shape[0] + shape[1]))
     W = tf.Variable(tf.random_uniform(shape, -maxval, maxval), name='Weights')
-
-    if shared_bias:
-        b = tf.Variable(tf.constant(0.1, shape=[1]), name='Bias')
-    else:
-        b = tf.Variable(tf.constant(0.1, shape=[shape[1]]), name='Bias')
+    b = tf.Variable(tf.constant(0.0, shape=[shape[1]]), name='Bias')
 
     return activation_fn(tf.matmul(x, W) + b)
 

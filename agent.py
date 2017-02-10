@@ -171,7 +171,8 @@ class Agent():
 
         # Estimate discounted rewards.
         rewards = np.array(rewards)
-        next_value = 0 if self.env.done else self.local_network.estimate_value(state, lstm_state)
+        next_value = 0 if self.env.done else self.local_network.estimate_value(self.env.get_state(),
+                                                                               lstm_state)
         discounted_rewards = _apply_discount(np.append(rewards, next_value), self.discount)[:-1]
 
         # Estimate advantages.
