@@ -81,7 +81,7 @@ class PolicyNetwork():
             # of h_flat is [batch_size, features]. We want the batch_size dimension to be treated as
             # the time dimension, so the input is redundantly expanded to [1, batch_size, features].
             # The LSTM layer will assume it has 1 batch with a time dimension of length batch_size.
-            batch_size = h_flat.get_shape()[0]
+            batch_size = tf.shape(h_flat)[:1]  # [:1] is a trick to correctly get the dynamic shape.
             lstm_input = tf.expand_dims(h_flat, [0])
             lstm_output, self.new_lstm_state = tf.nn.dynamic_rnn(lstm,
                                                                  lstm_input,
@@ -91,7 +91,7 @@ class PolicyNetwork():
             lstm_output = tf.squeeze(lstm_output, [0])
 
         self.action_logits = _fully_connected_layer(lstm_output, [256, num_actions], tf.identity)
-        self.value = _fully_connected_layer(lstm_output, [256, 1], tf.identity)
+        self.value = tf.squeeze(_fully_connected_layer(lstm_output, [256, 1], tf.identity))
         self.action = tf.squeeze(tf.multinomial(
             self.action_logits - tf.reduce_max(self.action_logits, 1, keep_dims=True), 1))
         self.parameters = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
@@ -115,7 +115,7 @@ class PolicyNetwork():
         """
 
         sess = tf.get_default_session()
-        feed_dict = {self.x: state, self.lstm_state: lstm_state}
+        feed_dict = {self.x: [state], self.lstm_state: lstm_state}
         return sess.run((self.action, self.value, self.new_lstm_state), feed_dict)
 
     def estimate_value(self, state, lstm_state):
@@ -123,13 +123,10 @@ class PolicyNetwork():
 
         Args:
             state: State of the environment.
-            lstm_state: The state of the long short-term memory unit of the network. Use the
-                get_initial_lstm_state method when unknown.
 
         Returns:
-            The value of the specified state and the new state of the LSTM unit.
+            The value of the specified state.
         """
 
         sess = tf.get_default_session()
-        feed_dict = {self.x: state, self.lstm_state: lstm_state}
-        return sess.run((self.value, self.new_lstm_state), feed_dict)
+        return sess.run(self.value, {self.x: [state], self.lstm_state: lstm_state})

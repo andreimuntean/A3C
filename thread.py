@@ -16,6 +16,7 @@ import tensorflow as tf
 import time
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 PARSER = argparse.ArgumentParser(description='Train an agent to play Atari games.')
 
 PARSER.add_argument('--env_name',
@@ -38,13 +39,9 @@ PARSER.add_argument('--action_space',
                     help='restricts the number of possible actions',
                     type=int)
 
-PARSER.add_argument('--load_path',
-                    metavar='PATH',
-                    help='loads a trained model from the specified path')
-
 PARSER.add_argument('--log_dir',
                     metavar='PATH',
-                    help='path to a directory where to save the model and log events',
+                    help='path to a directory where to save & restore the model and log events',
                     default='models/tmp')
 
 PARSER.add_argument('--num_threads',
@@ -89,6 +86,12 @@ PARSER.add_argument('--discount',
                     type=float,
                     default=0.99)
 
+PARSER.add_argument('--summary_update_interval',
+                    metavar='TRAINING STEPS',
+                    help='frequency at which summary data is update',
+                    type=int,
+                    default=10)
+
 
 def get_cluster_def(num_threads):
     """Creates a cluster definition for 1 master (parameter server) and num_threads workers."""
@@ -96,11 +99,11 @@ def get_cluster_def(num_threads):
     port = 14000
     localhost = '127.0.0.1'
     cluster = {'master': ['{}:{}'.format(localhost, port)],
-               'worker': []}
+               'thread': []}
 
     for _ in range(num_threads):
         port += 1
-        cluster['worker'].append('{}:{}'.format(localhost, port))
+        cluster['thread'].append('{}:{}'.format(localhost, port))
 
     return tf.train.ClusterSpec(cluster).as_cluster_def()
 
@@ -110,7 +113,15 @@ def run_worker(args):
 
     cluster_def = get_cluster_def(args.num_threads)
     config = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=2)
-    server = tf.train.Server(cluster_def, 'worker', args.worker_index, config=config)
+    server = tf.train.Server(cluster_def, 'thread', args.worker_index, config=config)
+
+    # Configure the supervisor.
+    is_chief = args.worker_index == 0
+    checkpoint_dir = os.path.join(args.log_dir, 'checkpoint')
+    thread_dir = os.path.join(args.log_dir, 'thread-{}'.format(args.worker_index))
+    summary_writer = tf.summary.FileWriter(thread_dir)
+    global_variables_initializer = tf.global_variables_initializer()
+    init_fn = lambda sess: sess.run(global_variables_initializer)
 
     # Initialize the model.
     env = environment.AtariWrapper(args.env_name, args.action_space)
@@ -121,17 +132,12 @@ def run_worker(args):
                          args.learning_rate,
                          args.entropy_regularization,
                          args.max_gradient_norm,
-                         args.discount)
+                         args.discount,
+                         summary_writer,
+                         args.summary_update_interval)
 
     # Local copies of the model will not be saved.
     model_variables = [var for var in tf.global_variables() if not var.name.startswith('local')]
-
-    # Configure the supervisor.
-    is_chief = args.worker_index == 0
-    checkpoint_dir = os.path.join(args.log_dir, 'checkpoint')
-    thread_dir = os.path.join(args.log_dir, 'thread-', args.worker_index)
-    summary_writer = tf.summary.FileWriter(thread_dir)
-    init_fn = lambda sess: sess.run(tf.global_variables_initializer())
 
     supervisor = tf.train.Supervisor(ready_op=tf.report_uninitialized_variables(model_variables),
                                      is_chief=is_chief,
@@ -146,15 +152,13 @@ def run_worker(args):
                                      init_fn=init_fn)
 
     config = tf.ConfigProto(device_filters=['/job:master',
-                                            '/job:worker/task:{}/cpu:0'.format(args.worker_index)])
+                                            '/job:thread/task:{}/cpu:0'.format(args.worker_index)])
 
+    LOGGER.info('Starting worker. This may take a while.')
     with supervisor.managed_session(server.target, config=config) as sess, sess.as_default():
-        player.start(sess, summary_writer)
-        global_step = sess.run(player.global_step)
-
+        global_step = 0
         while not supervisor.should_stop() and global_step < args.num_global_steps:
-            player.train(sess)
-            global_step = sess.run(player.global_step)
+            global_step = player.train()
 
     supervisor.stop()
     LOGGER.info('Stopped after %d global steps.', player.global_step)

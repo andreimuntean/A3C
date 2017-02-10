@@ -5,8 +5,28 @@ Learning' (Mnih et al., 2016).
 """
 
 import a3c
+import logging
 import numpy as np
 import tensorflow as tf
+
+from scipy import signal
+
+
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
+
+
+def _apply_discount(rewards, discount):
+    """Discounts the specified rewards exponentially.
+
+    Given rewards = [r0, r1, r2, ..., rn] and discount = 0.99, the result is [r0 * 0.99^n, r1 *
+    0.99^(n-1), r2 * 0.99^(n-2), ..., rn].
+
+    Returns:
+        The discounted rewards.
+    """
+
+    return signal.lfilter([1], [1, -discount], rewards[::-1])[::-1]
 
 
 class Agent():
@@ -18,7 +38,9 @@ class Agent():
                  learning_rate,
                  entropy_regularization,
                  max_gradient_norm,
-                 discount):
+                 discount,
+                 summary_writer,
+                 summary_update_interval):
         """An agent that learns to play Atari games using an A3C architecture.
 
         Args:
@@ -32,6 +54,8 @@ class Agent():
             max_gradient_norm: Maximum value allowed for the L2-norms of gradients. Gradients with
                 norms that would otherwise surpass this value are scaled down.
             discount: Discount factor for future rewards.
+            summary_writer: A TensorFlow object that writes summaries.
+            summary_update_interval: Number of training steps needed to update the summary data.
         """
 
         self.worker_index = worker_index
@@ -39,7 +63,9 @@ class Agent():
         self.render = render
         self.num_local_steps = num_local_steps
         self.discount = discount
-        self.local_step = 0
+        self.summary_writer = summary_writer
+        self.summary_update_interval = summary_update_interval
+        self.num_times_trained = 0
 
         worker_device = '/job:thread/task:{}/cpu:0'.format(worker_index)
 
@@ -48,15 +74,16 @@ class Agent():
                 self.global_network = a3c.PolicyNetwork(len(env.action_space),
                                                         env.observation_space)
                 self.global_step = tf.get_variable('global_step',
-                                                   dtype=tf.int32,
-                                                   initializer=tf.constant_initializer(0, tf.int32),
+                                                   [],
+                                                   tf.int32,
+                                                   tf.constant_initializer(0, tf.int32),
                                                    trainable=False)
         with tf.device(worker_device):
             with tf.variable_scope('local'):
                 self.local_network = a3c.PolicyNetwork(len(env.action_space), env.observation_space)
                 self.local_network.global_step = self.global_step
 
-        self.action = tf.placeholder(tf.int32, [None, len(env.action_space)], 'Action')
+        self.action = tf.placeholder(tf.int32, [None], 'Action')
         self.advantage = tf.placeholder(tf.float32, [None], 'Advantage')
         self.discounted_reward = tf.placeholder(tf.float32, [None], 'Discounted_Reward')
 
@@ -83,7 +110,7 @@ class Agent():
         clipped_gradients, _ = tf.clip_by_global_norm(gradients, max_gradient_norm)
 
         # Update the global network using the clipped gradients.
-        batch_size = self.local_network.x.get_shape()[0]
+        batch_size = tf.shape(self.local_network.x)[0]
         grads_and_vars = list(zip(clipped_gradients, self.global_network.parameters))
         self.train_step = [tf.train.AdamOptimizer(learning_rate).apply_gradients(grads_and_vars),
                            self.global_step.assign_add(batch_size)]
@@ -94,15 +121,77 @@ class Agent():
                                                                  self.global_network.parameters)]
 
         tf.summary.image('model/state', self.local_network.x)
-        tf.summary.scalar('model/policy_loss', policy_loss / batch_size)
-        tf.summary.scalar('model/value_loss', value_loss / batch_size)
-        tf.summary.scalar('model/entropy', entropy / batch_size)
+        tf.summary.scalar('model/policy_loss', policy_loss / tf.to_float(batch_size))
+        tf.summary.scalar('model/value_loss', value_loss / tf.to_float(batch_size))
+        tf.summary.scalar('model/entropy', entropy / tf.to_float(batch_size))
         tf.summary.scalar('model/global_norm', tf.global_norm(self.local_network.parameters))
         tf.summary.scalar('model/gradient_global_norm', tf.global_norm(gradients))
+        self.summary_step = tf.summary.merge_all()
 
-        self.thread = None
+    def _get_experiences(self):
+        states = []
+        actions = []
+        rewards = []
+        values = []
+
+        if self.env.done:
+            self.env.reset()
+
+        lstm_state = self.local_network.get_initial_lstm_state()
+
+        for _ in range(self.num_local_steps):
+            state = self.env.get_state()
+            action, value, lstm_state = self.local_network.sample_action(state, lstm_state)
+            reward = self.env.step(self.env.action_space[action])
+
+            if self.render:
+                self.env.render()
+
+            # Store this experience.
+            states.append(state)
+            actions.append(action)
+            rewards.append(reward)
+            values.append(value)
+
+            if self.env.done:
+                LOGGER.info('Finished episode. Total reward: %d. Length: %d.',
+                            self.env.total_reward,
+                            self.env.episode_length)
+                break
+
+        # Estimate discounted rewards.
+        rewards = np.array(rewards)
+        next_value = 0 if self.env.done else self.local_network.estimate_value(state, lstm_state)
+        discounted_rewards = _apply_discount(np.append(rewards, next_value), self.discount)[:-1]
+
+        # Estimate advantages.
+        values = np.array(values + [next_value])
+        advantages = _apply_discount(rewards + self.discount * values[1:] - values[:-1],
+                                     self.discount)
+
+        return np.array(states), np.array(actions), advantages, discounted_rewards
 
     def train(self):
         """Performs a single learning step."""
 
-        pass
+        sess = tf.get_default_session()
+        sess.run(self.reset_local_network)
+        states, actions, advantages, discounted_rewards = self._get_experiences()
+        feed_dict = {self.local_network.x: states,
+                     self.action: actions,
+                     self.advantage: advantages,
+                     self.discounted_reward: discounted_rewards,
+                     self.local_network.lstm_state: self.local_network.get_initial_lstm_state()}
+
+        # Occasionally write summaries.
+        if self.num_times_trained % self.summary_update_interval != 0:
+            _, global_step = sess.run([self.train_step, self.global_step], feed_dict)
+        else:
+            _, global_step, summary = sess.run(
+                [self.train_step, self.global_step, self.summary_step], feed_dict)
+            self.summary_writer.add_summary(tf.Summary.FromString(summary), global_step)
+            self.summary_writer.flush()
+
+        self.num_times_trained += 1
+
+        return global_step

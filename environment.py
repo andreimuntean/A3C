@@ -12,8 +12,28 @@ from scipy import misc
 
 
 # Specifies restricted action spaces. For games not in this dictionary, all actions are enabled.
-ACTION_SPACE = {'Pong-v0': {0, 2, 3},  # NONE, UP and DOWN.
-                'Breakout-v0': {1, 2, 3}}  # FIRE (respawn ball, otherwise NOOP), UP and DOWN.
+ACTION_SPACE = {'Pong-v0': [0, 2, 3],  # NONE, UP and DOWN.
+                'Breakout-v0': [1, 2, 3]}  # FIRE (respawn ball, otherwise NOOP), UP and DOWN.
+
+
+def _preprocess_observation(observation):
+    """Transforms the specified observation into an 80x80x1 grayscale image.
+
+    Returns:
+        An 80x80x1 tensor with float32 values between 0 and 1.
+    """
+
+    # Transform the frame into a grayscale image with values between 0 and 1. Luminance is
+    # extracted using the Y = 0.299 Red + 0.587 Green + 0.114 Blue formula. Values are scaled
+    # between 0 and 1 by further dividing each color channel by 255.
+    grayscale_frame = (observation[..., 0] * 0.00117 +
+                       observation[..., 1] * 0.0023 +
+                       observation[..., 2] * 0.00045)
+
+    # Resize grayscale frame to an 80x80 matrix of 32-bit floats.
+    observation = misc.imresize(grayscale_frame, (80, 80)).astype(np.float32)
+
+    return np.expand_dims(observation, 2)
 
 
 class AtariWrapper:
@@ -29,52 +49,48 @@ class AtariWrapper:
         """
 
         self.env = gym.make(env_name)
-        self.done = False
         self.observation_space = [80, 80, 1]
+        self.reset()
 
         if action_space:
-            self.action_space = set(action_space)
+            self.action_space = list(action_space)
         elif env_name in ACTION_SPACE:
             self.action_space = ACTION_SPACE[env_name]
         else:
-            self.action_space = set(range(self.env.action_space.n))
+            self.action_space = list(range(self.env.action_space.n))
 
     def reset(self):
         """Resets the environment."""
 
-        self.env.reset()
         self.done = False
+        self.total_reward = 0
+        self.episode_length = 0
+        self.state = _preprocess_observation(self.env.reset())
 
     def step(self, action):
         """Performs the specified action.
 
         Returns:
-            An observation (80x80x1 tensor with real values between 0 and 1) and a reward.
+            A reward.
 
         Raises:
+            Exception: If the game ended.
             ValueError: If the action is not valid.
         """
 
         if self.done:
-            self.reset()
+            raise Exception('Game finished.')
 
         if action not in self.action_space:
             raise ValueError('Action "{}" is invalid. Valid actions: {}.'.format(action,
                                                                                  self.action_space))
 
-        frame, reward, self.done, _ = self.env.step(action)
+        observation, reward, self.done, _ = self.env.step(action)
+        self.total_reward += reward
+        self.episode_length += 1
+        self.state = _preprocess_observation(observation)
 
-        # Transform the frame into a grayscale image with values between 0 and 1. Luminance is
-        # extracted using the Y = 0.299 Red + 0.587 Green + 0.114 Blue formula. Values are scaled
-        # between 0 and 1 by further dividing each color channel by 255.
-        grayscale_frame = (frame[..., 0] * 0.00117 +
-                           frame[..., 1] * 0.0023 +
-                           frame[..., 2] * 0.00045)
-
-        # Resize grayscale frame to an 80x80 matrix of 32-bit floats.
-        observation = misc.imresize(grayscale_frame, (80, 80)).astype(np.float32)
-
-        return np.expand_dims(observation, 1), reward
+        return reward
 
     def render(self):
         """Draws the environment."""
@@ -85,3 +101,12 @@ class AtariWrapper:
         """Samples a random action."""
 
         return np.random.choice(self.action_space)
+
+    def get_state(self):
+        """Gets the current state.
+
+        Returns:
+            An observation (80x80x1 tensor with float32 values between 0 and 1).
+        """
+
+        return self.state
