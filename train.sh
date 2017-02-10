@@ -6,9 +6,6 @@ TMUX_SESSION_NAME="a3c"
 NUM_THREADS=$(nproc --all)
 TENSORBOARD_PORT=15000
 
-# Hide GPUs from TensorFlow. The model is designed to run only on CPUs.
-export CUDA_VISIBLE_DEVICES=''
-
 # Create the log directory.
 mkdir -p $LOG_DIR
 

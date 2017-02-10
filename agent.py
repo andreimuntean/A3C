@@ -120,7 +120,6 @@ class Agent():
                                     for local_p, global_p in zip(self.local_network.parameters,
                                                                  self.global_network.parameters)]
 
-        tf.summary.image('model/state', self.local_network.x)
         tf.summary.scalar('model/policy_loss', policy_loss / tf.to_float(batch_size))
         tf.summary.scalar('model/value_loss', value_loss / tf.to_float(batch_size))
         tf.summary.scalar('model/entropy', entropy / tf.to_float(batch_size))
@@ -155,8 +154,19 @@ class Agent():
 
             if self.env.done:
                 LOGGER.info('Finished episode. Total reward: %d. Length: %d.',
-                            self.env.total_reward,
+                            self.env.episode_reward,
                             self.env.episode_length)
+
+                summary = tf.Summary()
+                summary.value.add(tag='environment/episode_length',
+                                  simple_value=self.env.episode_length)
+                summary.value.add(tag='environment/episode_reward',
+                                  simple_value=self.env.episode_reward)
+                summary.value.add(tag='environment/fps',
+                                  simple_value=self.env.episode_length / self.env.episode_run_time)
+
+                self.summary_writer.add_summary(summary, self.global_step.eval())
+                self.summary_writer.flush()
                 break
 
         # Estimate discounted rewards.
@@ -184,13 +194,13 @@ class Agent():
                      self.local_network.lstm_state: self.local_network.get_initial_lstm_state()}
 
         # Occasionally write summaries.
-        if self.num_times_trained % self.summary_update_interval != 0:
-            _, global_step = sess.run([self.train_step, self.global_step], feed_dict)
-        else:
+        if self.worker_index == 0 and self.num_times_trained % self.summary_update_interval == 0:
             _, global_step, summary = sess.run(
                 [self.train_step, self.global_step, self.summary_step], feed_dict)
             self.summary_writer.add_summary(tf.Summary.FromString(summary), global_step)
             self.summary_writer.flush()
+        else:
+            _, global_step = sess.run([self.train_step, self.global_step], feed_dict)
 
         self.num_times_trained += 1
 

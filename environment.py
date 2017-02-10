@@ -7,6 +7,7 @@ Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforc
 
 import gym
 import numpy as np
+import time
 
 from scipy import misc
 
@@ -63,9 +64,11 @@ class AtariWrapper:
         """Resets the environment."""
 
         self.done = False
-        self.total_reward = 0
+        self.episode_reward = 0
         self.episode_length = 0
         self.state = _preprocess_observation(self.env.reset())
+        self.episode_start_time = time.time()
+        self.episode_run_time = 0
 
     def step(self, action):
         """Performs the specified action.
@@ -86,9 +89,10 @@ class AtariWrapper:
                                                                                  self.action_space))
 
         observation, reward, self.done, _ = self.env.step(action)
-        self.total_reward += reward
+        self.episode_reward += reward
         self.episode_length += 1
         self.state = _preprocess_observation(observation)
+        self.episode_run_time = time.time() - self.episode_start_time
 
         return reward
 
