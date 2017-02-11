@@ -158,7 +158,7 @@ def run_worker(args):
     with supervisor.managed_session(server.target, config=config) as sess, sess.as_default():
         global_step = 0
         while not supervisor.should_stop() and global_step < args.num_global_steps:
-            global_step = player.train()
+            global_step = player.train(sess)
 
     supervisor.stop()
     LOGGER.info('Stopped after %d global steps.', player.global_step)

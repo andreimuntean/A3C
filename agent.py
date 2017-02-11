@@ -93,11 +93,11 @@ class Agent():
             self.advantage * -tf.nn.sparse_softmax_cross_entropy_with_logits(logits=action_logits,
                                                                              labels=self.action))
 
-        # Regularize the policy loss by summing it with its entropy. High entropy means the agent is
-        # uncertain (meaning, it assigns similar probabilities to multiple actions). Low entropy
-        # means the agent is sure of which action it should perform next.
+        # Regularize the policy loss by adding uncertainty (subtracting entropy). High entropy means
+        # the agent is uncertain (meaning, it assigns similar probabilities to multiple actions).
+        # Low entropy means the agent is sure of which action it should perform next.
         entropy = -tf.reduce_sum(tf.nn.softmax(action_logits) * tf.nn.log_softmax(action_logits))
-        policy_loss += entropy_regularization * entropy
+        policy_loss -= entropy_regularization * entropy
 
         # Estimate the value loss using the sum of squared errors.
         value_loss = tf.nn.l2_loss(self.local_network.value - self.discounted_reward)
@@ -182,10 +182,13 @@ class Agent():
 
         return np.array(states), np.array(actions), advantages, discounted_rewards
 
-    def train(self):
-        """Performs a single learning step."""
+    def train(self, sess):
+        """Performs a single learning step.
 
-        sess = tf.get_default_session()
+        Args:
+            sess: A TensorFlow session.
+        """
+
         sess.run(self.reset_local_network)
         states, actions, advantages, discounted_rewards = self._get_experiences()
         feed_dict = {self.local_network.x: states,
