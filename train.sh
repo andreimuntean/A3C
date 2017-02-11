@@ -30,29 +30,30 @@ tmux new-window -t $TMUX_SESSION_NAME -n htop
 sleep 1
 
 # Start the master thread, which synchronizes worker threads.
-tmux send-keys -t a3c:master "/usr/bin/python3 thread.py" \
-                             " --env_name=$ENV_NAME" \
-                             " --log_dir=$LOG_DIR" \
-                             " --num_threads=$NUM_THREADS" \
-                             " $@" Enter
-
-# Start worker threads.
-for thread_id in $(seq 0 $(($NUM_THREADS - 1))); do
-    tmux send-keys -t a3c:thread-$thread_id "/usr/bin/python3 thread.py" \
+tmux send-keys -t $TMUX_SESSION_NAME:master "/usr/bin/python3 thread.py" \
                                             " --env_name=$ENV_NAME" \
                                             " --log_dir=$LOG_DIR" \
                                             " --num_threads=$NUM_THREADS" \
-                                            " --worker_index=$thread_id" \
                                             " $@" Enter
+
+# Start worker threads.
+for thread_id in $(seq 0 $(($NUM_THREADS - 1))); do
+    tmux send-keys -t $TMUX_SESSION_NAME:thread-$thread_id \
+        "/usr/bin/python3 thread.py" \
+        " --env_name=$ENV_NAME" \
+        " --log_dir=$LOG_DIR" \
+        " --num_threads=$NUM_THREADS" \
+        " --worker_index=$thread_id" \
+        " $@" Enter
 done
 
 # Start TensorBoard.
-tmux send-keys -t a3c:tensorboard "tensorboard" \
-                                  " --port $TENSORBOARD_PORT" \
-                                  " --logdir $LOG_DIR" Enter
+tmux send-keys -t $TMUX_SESSION_NAME:tensorboard "tensorboard" \
+                                                 " --port $TENSORBOARD_PORT" \
+                                                 " --logdir $LOG_DIR" Enter
 
 # Start htop.
-tmux send-keys -t a3c:htop htop Enter
+tmux send-keys -t $TMUX_SESSION_NAME:htop htop Enter
 
 echo "Started the learning session."
 echo "Started TensorBoard at localhost:$TENSORBOARD_PORT."
