@@ -19,8 +19,13 @@ LOGGER.setLevel(logging.INFO)
 def _apply_discount(rewards, discount):
     """Discounts the specified rewards exponentially.
 
-    Given rewards = [r0, r1, r2, ..., rn] and discount = 0.99, the result is [r0 * 0.99^n, r1 *
-    0.99^(n-1), r2 * 0.99^(n-2), ..., rn].
+    Given rewards = [r0, r1, r2, r3] and discount = 0.99, the result is:
+        [r0 + 0.99 * (r1 + 0.99 * (r2 + 0.99 * r3)),
+         r1 + 0.99 * (r2 + 0.99 * r3),
+         r2 + 0.99 * r3,
+         r3]
+
+    Example: rewards = [10, 20, 30, 40] and discount = 0.99 -> [98.01496, 88.904, 69.6, 40].
 
     Returns:
         The discounted rewards.
@@ -90,8 +95,8 @@ class Agent():
         # Estimate the policy loss using the cross-entropy loss function.
         action_logits = self.local_network.action_logits
         policy_loss = tf.reduce_sum(
-            self.advantage * -tf.nn.sparse_softmax_cross_entropy_with_logits(logits=action_logits,
-                                                                             labels=self.action))
+            self.advantage * tf.nn.sparse_softmax_cross_entropy_with_logits(logits=action_logits,
+                                                                            labels=self.action))
 
         # Regularize the policy loss by adding uncertainty (subtracting entropy). High entropy means
         # the agent is uncertain (meaning, it assigns similar probabilities to multiple actions).
@@ -120,6 +125,7 @@ class Agent():
                                     for local_p, global_p in zip(self.local_network.parameters,
                                                                  self.global_network.parameters)]
 
+        tf.summary.scalar('model/loss', self.loss / tf.to_float(batch_size))
         tf.summary.scalar('model/policy_loss', policy_loss / tf.to_float(batch_size))
         tf.summary.scalar('model/value_loss', value_loss / tf.to_float(batch_size))
         tf.summary.scalar('model/entropy', entropy / tf.to_float(batch_size))
