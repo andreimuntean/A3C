@@ -18,23 +18,21 @@ ACTION_SPACE = {'Pong-v0': [0, 2, 3],  # NONE, UP and DOWN.
 
 
 def _preprocess_observation(observation):
-    """Transforms the specified observation into an 80x80x1 grayscale image.
+    """Transforms the specified observation into a 47x47x1 grayscale image.
 
     Returns:
-        An 80x80x1 tensor with float32 values between 0 and 1.
+        A 47x47x1 tensor with float32 values between 0 and 1.
     """
 
-    # Transform the frame into a grayscale image with values between 0 and 1. Luminance is
-    # extracted using the Y = 0.299 Red + 0.587 Green + 0.114 Blue formula. Values are scaled
-    # between 0 and 1 by further dividing each color channel by 255.
-    grayscale_frame = (observation[..., 0] * 0.00117 +
-                       observation[..., 1] * 0.0023 +
-                       observation[..., 2] * 0.00045)
+    # Transform the observation into a grayscale image with values between 0 and 1. Use the simple
+    # np.mean method instead of sophisticated luminance extraction techniques since they do not seem
+    # to improve training.
+    grayscale_observation = observation[24:194].mean(2)
 
-    # Resize grayscale frame to an 80x80 matrix of 32-bit floats.
-    observation = misc.imresize(grayscale_frame, (80, 80)).astype(np.float32)
+    # Resize grayscale frame to a 47x47 matrix of 32-bit floats.
+    resized_observation = misc.imresize(grayscale_observation, (47, 47)).astype(np.float32)
 
-    return np.expand_dims(observation, 2)
+    return np.expand_dims(resized_observation, 2)
 
 
 class AtariWrapper:
@@ -50,7 +48,7 @@ class AtariWrapper:
         """
 
         self.env = gym.make(env_name)
-        self.observation_space = [80, 80, 1]
+        self.observation_space = [47, 47, 1]
         self.reset()
 
         if action_space:
@@ -110,7 +108,7 @@ class AtariWrapper:
         """Gets the current state.
 
         Returns:
-            An observation (80x80x1 tensor with float32 values between 0 and 1).
+            An observation (47x47x1 tensor with float32 values between 0 and 1).
         """
 
         return self.state
