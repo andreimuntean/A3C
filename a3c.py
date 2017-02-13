@@ -48,16 +48,16 @@ class PolicyNetwork():
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
 
         with tf.name_scope('Convolutional_Layer_1'):
-            h_conv1 = _convolutional_layer(self.x, [3, 3, depth, 32], 2, tf.nn.elu)
+            h_conv1 = _convolutional_layer(self.x, [3, 3, depth, 32], 2, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_2'):
-            h_conv2 = _convolutional_layer(h_conv1, [3, 3, 32, 32], 2, tf.nn.elu)
+            h_conv2 = _convolutional_layer(h_conv1, [3, 3, 32, 32], 2, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_3'):
-            h_conv3 = _convolutional_layer(h_conv2, [3, 3, 32, 32], 2, tf.nn.elu)
+            h_conv3 = _convolutional_layer(h_conv2, [3, 3, 32, 32], 2, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_4'):
-            h_conv4 = _convolutional_layer(h_conv3, [3, 3, 32, 32], 2, tf.nn.elu)
+            h_conv4 = _convolutional_layer(h_conv3, [3, 3, 32, 32], 2, tf.nn.relu)
 
         # Flatten the output to feed it into the LSTM layer.
         num_params = np.prod(h_conv4.get_shape().as_list()[1:])
