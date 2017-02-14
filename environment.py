@@ -27,7 +27,7 @@ def _preprocess_observation(observation):
     # Transform the observation into a grayscale image with values between 0 and 1. Use the simple
     # np.mean method instead of sophisticated luminance extraction techniques since they do not seem
     # to improve training.
-    grayscale_observation = observation[24:194].mean(2)
+    grayscale_observation = observation.mean(2)
 
     # Resize grayscale frame to a 47x47 matrix of 32-bit floats.
     resized_observation = misc.imresize(grayscale_observation, (47, 47)).astype(np.float32)
