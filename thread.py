@@ -124,7 +124,7 @@ def run_worker(args):
     init_fn = lambda sess: sess.run(global_variables_initializer)
 
     # Initialize the model.
-    env = environment.AtariWrapper(args.env_name, args.action_space)
+    env = environment.AtariWrapper(args.env_name, environment.TRAINING, args.action_space)
     player = agent.Agent(args.worker_index,
                          env,
                          args.render,

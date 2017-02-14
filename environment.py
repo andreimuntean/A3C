@@ -16,6 +16,9 @@ from scipy import misc
 ACTION_SPACE = {'Pong-v0': [0, 2, 3],  # NONE, UP and DOWN.
                 'Breakout-v0': [1, 2, 3]}  # FIRE (respawn ball, otherwise NOOP), UP and DOWN.
 
+TESTING = 0
+TRAINING = 1
+
 
 def _preprocess_observation(observation):
     """Transforms the specified observation into a 47x47x1 grayscale image.
@@ -38,16 +41,23 @@ def _preprocess_observation(observation):
 class AtariWrapper:
     """Wraps over an Atari environment from OpenAI Gym and preprocesses observations."""
 
-    def __init__(self, env_name, action_space=None):
+    def __init__(self, env_name, mode, action_space=None):
         """Creates the wrapper.
 
         Args:
             env_name: Name of an OpenAI Gym Atari environment.
             action_space: A list of possible actions. If 'action_space' is 'None' and no default
                 configuration exists for this environment, all actions will be allowed.
+            mode: The context in which the environment is used. Can be either environment.TESTING or
+                environment.TRAINING.
         """
 
+        if mode is not TESTING and mode is not TRAINING:
+            raise ValueError(('Mode is invalid. Must be either environment.TESTING or '
+                              'environment.TRAINING.'))
+
         self.env = gym.make(env_name)
+        self.mode = mode
         self.observation_space = [47, 47, 1]
         self.reset()
 
@@ -67,6 +77,7 @@ class AtariWrapper:
         self.state = _preprocess_observation(self.env.reset())
         self.episode_start_time = time.time()
         self.episode_run_time = 0
+        self.lives = self.env.ale.lives()
 
     def step(self, action):
         """Performs the specified action.
@@ -86,11 +97,18 @@ class AtariWrapper:
             raise ValueError('Action "{}" is invalid. Valid actions: {}.'.format(action,
                                                                                  self.action_space))
 
-        observation, reward, self.done, _ = self.env.step(action)
+        observation, reward, self.done, info = self.env.step(action)
+
+        if self.mode is TRAINING and info['ale.lives'] < self.lives:
+            # While training, treat loss of life as end of episode.
+            reward = -1
+            self.done = True
+
         self.episode_reward += reward
         self.episode_length += 1
         self.state = _preprocess_observation(observation)
         self.episode_run_time = time.time() - self.episode_start_time
+        self.lives = info['ale.lives']
 
         return reward
 
