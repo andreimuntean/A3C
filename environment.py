@@ -101,7 +101,6 @@ class AtariWrapper:
 
         if self.mode is TRAINING and info['ale.lives'] < self.lives:
             # While training, treat loss of life as end of episode.
-            reward = -1
             self.done = True
 
         self.episode_reward += reward
