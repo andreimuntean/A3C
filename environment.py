@@ -83,7 +83,7 @@ class AtariWrapper:
         """Performs the specified action.
 
         Returns:
-            A reward.
+            A reward signal which is either -1, 0 or 1.
 
         Raises:
             Exception: If the game ended.
@@ -109,7 +109,7 @@ class AtariWrapper:
         self.episode_run_time = time.time() - self.episode_start_time
         self.lives = info['ale.lives']
 
-        return reward
+        return -1 if reward < 0 else 1 if reward > 0 else 0
 
     def render(self):
         """Draws the environment."""

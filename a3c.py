@@ -70,8 +70,8 @@ class PolicyNetwork():
             self.initial_lstm_state = (np.zeros([1, 256], np.float32),
                                        np.zeros([1, 256], np.float32))
 
-            lstm_state = tf.contrib.rnn.rnn_cell.LSTMStateTuple(*self.lstm_state)
-            lstm = tf.contrib.rnn.rnn_cell.BasicLSTMCell(256)
+            lstm_state = tf.contrib.rnn.LSTMStateTuple(*self.lstm_state)
+            lstm = tf.contrib.rnn.BasicLSTMCell(256)
 
             # tf.nn.dynamic_rnn expects inputs of shape [batch_size, time, features], but the shape
             # of h_flat is [batch_size, features]. We want the batch_size dimension to be treated as
