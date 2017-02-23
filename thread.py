@@ -88,7 +88,7 @@ PARSER.add_argument('--discount',
 
 PARSER.add_argument('--summary_update_interval',
                     metavar='TRAINING STEPS',
-                    help='frequency at which summary data is update',
+                    help='frequency at which summary data is updated when training',
                     type=int,
                     default=10)
 
