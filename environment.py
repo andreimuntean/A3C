@@ -77,7 +77,7 @@ class AtariWrapper:
         self.state = _preprocess_observation(self.env.reset())
         self.episode_start_time = time.time()
         self.episode_run_time = 0
-        self.lives = self.env.ale.lives()
+        self.lives = None
 
     def step(self, action):
         """Performs the specified action.
@@ -99,7 +99,7 @@ class AtariWrapper:
 
         observation, reward, self.done, info = self.env.step(action)
 
-        if self.mode is TRAINING and info['ale.lives'] < self.lives:
+        if self.mode is TRAINING and self.lives is not None and info['ale.lives'] < self.lives:
             # While training, treat loss of life as end of episode.
             self.done = True
 
