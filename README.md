@@ -11,7 +11,7 @@ This AI does not rely on hand-engineered rules or features. Instead, it masters 
 Uses environments provided by [OpenAI Gym](https://gym.openai.com/).
 
 ## Preprocessing
-Each frame is transformed into a 47×47 grayscale image with 32-bit float values between 0 and 1.
+Each frame is transformed into a 47×47 grayscale image with 32-bit float values between 0 and 1. No image cropping is performed. Reward signals are restricted to -1, 0 and 1.
 
 ## Network Architecture
 The input layer consists of a 47×47 grayscale image.
