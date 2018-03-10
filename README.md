@@ -5,7 +5,7 @@ This AI does not rely on hand-engineered rules or features. Instead, it masters 
 
 ## Dependencies
 * NumPy
-* OpenAI Gym 0.8
+* OpenAI Gym 0.10
 * Pillow
 * SciPy
 * TensorFlow 1.0
